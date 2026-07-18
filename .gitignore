@@ -1,0 +1,24 @@
+# Built files
+/app/build/
+/build/
+*.apk
+*.aab
+
+# Gradle
+.gradle/
+gradle-app.setting
+
+# Local config (contains machine-specific SDK path)
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel (not needed for this Android app)
+api/
+vercel.json
