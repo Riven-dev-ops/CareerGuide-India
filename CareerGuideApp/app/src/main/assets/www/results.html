@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Results — CareerGuide India</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <nav class="navbar">
+    <div class="container nav-container">
+      <div class="logo-section">
+        <h1 class="logo"><span class="logo-mark"></span> CareerGuide India</h1>
+      </div>
+    </div>
+  </nav>
+
+  <div class="results-container" id="resultsRoot">
+    <div class="results-header">
+      <h2>Your personalised stream report</h2>
+      <p>Based on your marks, quest choices and preferences.</p>
+    </div>
+
+    <div id="primaryContainer"></div>
+
+    <div class="alternatives-section" id="alternativesSection" style="display:none;">
+      <h3>Other options worth considering</h3>
+      <div class="alternatives-grid" id="alternativesGrid"></div>
+    </div>
+
+    <div class="action-plan" id="actionPlanSection" style="display:none;">
+      <h3>Your next steps, starting this month</h3>
+      <div class="timeline" id="timelineList"></div>
+    </div>
+
+    <div class="general-advice">
+      <h3>General advice for every stream</h3>
+      <ul class="advice-list" id="adviceList"></ul>
+    </div>
+
+    <div class="results-actions">
+      <button class="btn-primary" id="printBtn">📄 Download PDF</button>
+      <button class="btn-tertiary" onclick="window.location.href='assessment.html'">🔁 Retake the quest</button>
+      <button class="btn-primary" id="chatAiBtn">💬 Chat with AI Counsellor</button>
+      <button class="btn-tertiary" onclick="window.location.href='index.html'">🏠 Back to home</button>
+    </div>
+
+    <div class="results-footer">
+      CareerGuide India is an educational tool providing general guidance based on
+      algorithmic matching. It is not professional counselling. Please involve
+      parents, teachers and qualified career counsellors in your final decision.
+    </div>
+  </div>
+
+  <!-- AI Chatbot Drawer & Overlay -->
+  <div class="chat-drawer-overlay" id="chatOverlay"></div>
+  <div class="chat-drawer" id="chatDrawer">
+    <div class="chat-header">
+      <div class="chat-header-title">
+        <span class="chat-avatar">🤖</span>
+        <div>
+          <h4>AI Career Counsellor</h4>
+          <span class="chat-status">Online · Ready to help</span>
+        </div>
+      </div>
+      <button class="chat-close-btn" id="closeChatBtn">&times;</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-bubble incoming">
+        Hi! I've reviewed your academic scores, scenario choices, and preferences. Feel free to ask me anything about
+        your recommended streams, how to prepare, or any specific career path you're curious about!
+      </div>
+    </div>
+    <!-- Dynamic Suggestion Chips -->
+    <div class="chat-suggestions" id="chatSuggestions"></div>
+    <div class="chat-input-area">
+      <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off">
+      <button class="chat-send-btn" id="sendChatBtn">
+        <svg viewBox="0 0 24 24">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="js/main.js?v=103"></script>
+
+  <!-- html2canvas + jsPDF, loaded directly so we have full manual control over page size
+       (html2pdf.js's own bundle doesn't expose these two internally, and its automatic
+       pagination always slices to a fixed page height — no good for a single continuous page) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    document.getElementById("printBtn").addEventListener("click", async function () {
+      const btn = this;
+      const originalLabel = btn.innerHTML;
+      const element = document.getElementById("resultsRoot");
+      const actionsDiv = document.querySelector(".results-actions");
+      const chatDrawer = document.getElementById("chatDrawer");
+      const chatOverlay = document.getElementById("chatOverlay");
+
+      // Remember which of these were visible so we can restore them exactly
+      const wasChatOpen = chatDrawer.classList.contains("open");
+
+      // Hide anything that shouldn't appear inside the PDF itself
+      actionsDiv.style.display = "none";
+      chatDrawer.style.display = "none";
+      chatOverlay.style.display = "none";
+      element.classList.add("single-page-pdf");
+
+      btn.disabled = true;
+      btn.innerHTML = "⏳ Preparing PDF...";
+
+      const restore = () => {
+        element.classList.remove("single-page-pdf");
+        actionsDiv.style.display = "";
+        chatDrawer.style.display = "";
+        chatOverlay.style.display = "";
+        if (wasChatOpen) chatDrawer.classList.add("open");
+        btn.disabled = false;
+        btn.innerHTML = originalLabel;
+      };
+
+      try {
+        // Screenshot the WHOLE report as one tall canvas — no slicing, no page breaks at all
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff" // matches your "body { background: white; }" print rule
+        });
+
+        const { jsPDF } = window.jspdf;
+
+        const pageWidthMM = 210; // A4 width, kept for a familiar look/paper size
+        const marginX = 10;
+        const marginTop = 8;
+        const marginBottom = 14; // leaves room for the footer line + text below
+        const contentWidthMM = pageWidthMM - marginX * 2;
+        const imgHeightMM = (canvas.height / canvas.width) * contentWidthMM;
+        const pageHeightMM = imgHeightMM + marginTop + marginBottom;
+
+        // The page's HEIGHT is custom-built to exactly fit the content — this is what
+        // guarantees everything lands on one single page, top to bottom, no matter how
+        // long the report is.
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: [pageWidthMM, pageHeightMM]
+        });
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.98);
+        pdf.addImage(imgData, "JPEG", marginX, marginTop, contentWidthMM, imgHeightMM);
+
+        // Footer: divider line + brand, echoing the .results-footer border-top in style.css
+        pdf.setDrawColor(225, 217, 196); // --border
+        pdf.setLineWidth(0.2);
+        pdf.line(marginX, pageHeightMM - 10, pageWidthMM - marginX, pageHeightMM - 10);
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.setTextColor(22, 33, 58); // --navy
+        pdf.text("CareerGuide India", marginX, pageHeightMM - 5);
+
+        // Single page now, so a date reads more usefully here than "Page 1 of 1"
+        const today = new Date().toLocaleDateString("en-IN", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(91, 100, 114); // --ink-soft
+        pdf.text(today, pageWidthMM - marginX, pageHeightMM - 5, { align: "right" });
+
+        pdf.save("CareerGuide-Roadmap.pdf");
+        restore();
+      } catch (err) {
+        console.error("PDF generation failed:", err);
+        restore();
+        // Fallback so the user still gets something if html2canvas/jsPDF ever fail to load
+        if (window.AndroidBridge && typeof window.AndroidBridge.printPage === "function") {
+          window.AndroidBridge.printPage();
+        } else {
+          window.print();
+        }
+      }
+    });
+  </script>
+</body>
+
+</html>

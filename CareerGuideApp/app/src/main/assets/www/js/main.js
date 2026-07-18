@@ -1,0 +1,320 @@
+/* =========================================================
+   main.js — renders the results.html report from the JSON
+   produced by career_engine.js (via game.js). Offline app —
+   no server calls anywhere in this file.
+   ========================================================= */
+
+const STREAM_COLORS = {
+  science: "#E8A33D",
+  commerce: "#2F6F6B",
+  arts: "#C1495F",
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("resultsRoot")) renderResults();
+});
+
+function renderResults() {
+  const raw = sessionStorage.getItem("careerGuideResults");
+
+  if (!raw) {
+    document.getElementById("primaryContainer").innerHTML =
+      `<div class="primary-card"><p>No assessment data found. Please
+      <a href="/assessment">take the assessment</a> first.</p></div>`;
+    return;
+  }
+
+  const data = JSON.parse(raw);
+  const primary = data.primary_recommendation;
+  const alternatives = data.alternatives || [];
+  const advice = data.general_advice || [];
+
+  if (primary) {
+    document.getElementById("primaryContainer").innerHTML = buildPrimaryCard(primary);
+    document.getElementById("timelineList").innerHTML = primary.next_steps
+      .map((step, i) => `
+        <div class="timeline-item">
+          <div class="timeline-number">${i + 1}</div>
+          <div class="timeline-content">${escapeHtml(step)}</div>
+        </div>`)
+      .join("");
+    document.getElementById("actionPlanSection").style.display = "block";
+  }
+
+  if (alternatives.length) {
+    document.getElementById("alternativesGrid").innerHTML = alternatives
+      .map((alt) => buildAlternativeCard(alt))
+      .join("");
+    document.getElementById("alternativesSection").style.display = "block";
+  }
+
+  document.getElementById("adviceList").innerHTML = advice
+    .map((tip) => `<li>${escapeHtml(tip)}</li>`)
+    .join("");
+}
+
+function buildPrimaryCard(rec) {
+  const color = STREAM_COLORS[rec.tag] || STREAM_COLORS.science;
+  return `
+    <div class="primary-card" style="--stream-color:${color}">
+      <div class="match-badge"><span class="pct">${rec.confidence}%</span><span class="lbl">match</span></div>
+      <h2 class="stream-title">${escapeHtml(rec.stream)}</h2>
+      <div class="stream-meta">
+        <span>Difficulty: ${escapeHtml(rec.difficulty)}</span>
+        <span>${rec.subjects.length} core subjects</span>
+      </div>
+      <p><strong>Why this fits you:</strong></p>
+      <ul class="why-list">
+        ${rec.why.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}
+      </ul>
+      <p><strong>Top career paths:</strong></p>
+      <div class="careers-grid">
+        ${rec.top_careers.map(buildCareerCard).join("")}
+      </div>
+    </div>`;
+}
+
+function buildCareerCard(career) {
+  return `
+    <div class="career-card">
+      <h5>${escapeHtml(career.name)}</h5>
+      <p><strong>Exams:</strong> ${escapeHtml((career.exams || []).join(", "))}</p>
+      <p><strong>Duration:</strong> ${escapeHtml(career.duration || "—")}</p>
+      <p><strong>Scope:</strong> ${escapeHtml(career.scope || "—")}</p>
+    </div>`;
+}
+
+function buildAlternativeCard(alt) {
+  const color = STREAM_COLORS[alt.tag] || STREAM_COLORS.science;
+  return `
+    <div class="alternative-card" style="--stream-color:${color}">
+      <span class="alt-match" style="background:${color}">${alt.confidence}% match</span>
+      <h4>${escapeHtml(alt.stream)}</h4>
+      <p class="alt-subjects">${escapeHtml(alt.subjects.join(", "))}</p>
+      <ul class="alt-careers">
+        ${alt.top_careers.slice(0, 3).map((c) => `<li>${escapeHtml(c.name)}</li>`).join("")}
+      </ul>
+    </div>`;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+/* =========================================================
+   AI Career Counsellor Chatbot Integration
+   ========================================================= */
+
+const GROQ_API_KEY = "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";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+let chatHistory = [];
+
+document.addEventListener("DOMContentLoaded", () => {
+  const chatAiBtn = document.getElementById("chatAiBtn");
+  const chatDrawer = document.getElementById("chatDrawer");
+  const chatOverlay = document.getElementById("chatOverlay");
+  const closeChatBtn = document.getElementById("closeChatBtn");
+
+  if (chatAiBtn && chatDrawer && chatOverlay && closeChatBtn) {
+    chatAiBtn.addEventListener("click", () => {
+      chatDrawer.classList.add("show");
+      chatOverlay.classList.add("show");
+      document.body.style.overflow = "hidden";
+    });
+
+    closeChatBtn.addEventListener("click", () => {
+      chatDrawer.classList.remove("show");
+      chatOverlay.classList.remove("show");
+      document.body.style.overflow = "";
+    });
+
+    chatOverlay.addEventListener("click", () => {
+      chatDrawer.classList.remove("show");
+      chatOverlay.classList.remove("show");
+      document.body.style.overflow = "";
+    });
+  }
+
+  const sendChatBtn = document.getElementById("sendChatBtn");
+  const chatInput = document.getElementById("chatInput");
+  const chatMessages = document.getElementById("chatMessages");
+
+  if (sendChatBtn && chatInput && chatMessages) {
+    sendChatBtn.addEventListener("click", handleSendMessage);
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleSendMessage();
+    });
+  }
+
+  async function handleSendMessage() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    appendChatBubble(text, "outgoing");
+    chatInput.value = "";
+    chatInput.focus();
+
+    const loadingBubble = appendLoadingBubble();
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    const startTime = Date.now();
+
+    try {
+      if (chatHistory.length === 0) {
+        chatHistory.push({ role: "system", content: initChatSystemPrompt() });
+      }
+      chatHistory.push({ role: "user", content: text });
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: chatHistory,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const json = await response.json();
+      const answer = json.choices[0].message.content;
+
+      // Enforce minimum 1.8 second delay to show the typing bubble realistically
+      const elapsed = Date.now() - startTime;
+      const remaining = 1800 - elapsed;
+      if (remaining > 0) {
+        await new Promise(resolve => setTimeout(resolve, remaining));
+      }
+
+      loadingBubble.remove();
+      appendChatBubble(answer, "incoming");
+      chatHistory.push({ role: "assistant", content: answer });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    } catch (err) {
+      console.error("Chat error:", err);
+      // Ensure we still show the delay on error if needed, or clear immediately
+      loadingBubble.remove();
+      appendChatBubble("Sorry, I encountered an issue connecting. Please try again in a moment.", "incoming");
+    }
+  }
+
+  function appendChatBubble(text, type) {
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${type}`;
+    bubble.innerHTML = text.replace(/\n/g, "<br>").replace(/\* \*\*(.*?)\*\*/g, "<b>$1</b>");
+    chatMessages.appendChild(bubble);
+    return bubble;
+  }
+
+  function appendLoadingBubble() {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble incoming loading-bubble";
+    bubble.innerHTML = `
+      <div class="chat-dot"></div>
+      <div class="chat-dot"></div>
+      <div class="chat-dot"></div>
+    `;
+    chatMessages.appendChild(bubble);
+    return bubble;
+  }
+
+  function initChatSystemPrompt() {
+    const raw = sessionStorage.getItem("careerGuideResults");
+    if (!raw) return "You are an expert career guidance counsellor for 9-10th class Indian students.";
+    
+    const results = JSON.parse(raw);
+    const primary = results.primary_recommendation;
+    const alternatives = results.alternatives || [];
+    const advice = results.general_advice || [];
+
+    return `You are an expert, friendly, and realistic career guidance counsellor for a Class 9-10 student in India.
+Here is the student's profile and assessment results:
+- Recommended Stream: ${primary ? primary.stream : "Not available"}
+- Recommended Stream Tag: ${primary ? primary.tag : "Not available"}
+- Academic subjects included: ${primary ? primary.subjects.join(", ") : "Not available"}
+- Confidence level: ${primary ? primary.confidence + "%" : "Not available"}
+- Stream difficulty: ${primary ? primary.difficulty : "Not available"}
+- Why this fits them: ${primary ? primary.why.join("; ") : "Not available"}
+- Top careers: ${primary ? primary.top_careers.map(c => c.name).join(", ") : "Not available"}
+- Suggested next steps: ${primary ? primary.next_steps.join("; ") : "Not available"}
+- Alternative streams worth considering: ${alternatives.map(a => `${a.stream} (${a.confidence}% match)`).join(", ")}
+- General advice: ${advice.join("; ")}
+
+Your goal is to consult the student, answer their questions about their results, advise them on how to prepare, suggest study resources, explain career scopes, and guide them in a realistic, frank, and encouraging manner.
+
+CRITICAL REQUIREMENT: Keep your responses extremely short, concise, and valuable (max 100-150 words). Avoid any long intros, chatty greeting repetitions, or boilerplate text. Focus directly on giving high-value, action-oriented answers.`;
+  }
+
+  // Dynamic Suggestion Chips
+  const rawData = sessionStorage.getItem("careerGuideResults");
+  let chips = [
+    "What subjects should I focus on?",
+    "How should I plan my study schedule?",
+    "What are top colleges for my stream?"
+  ];
+
+  if (rawData) {
+    const results = JSON.parse(rawData);
+    const primary = results.primary_recommendation;
+    if (primary) {
+      const tag = primary.tag;
+      const stream = primary.stream.toLowerCase();
+      
+      if (tag === "science") {
+        if (stream.includes("pcb")) {
+          chips = [
+            "How do I prepare for NEET?",
+            "What careers exist other than MBBS?",
+            "How should I plan my study schedule?"
+          ];
+        } else {
+          chips = [
+            "What JEE prep books do I need?",
+            "Tell me about engineering vs research.",
+            "How should I plan my study schedule?"
+          ];
+        }
+      } else if (tag === "commerce") {
+        chips = [
+          "What is the scope of CA / Actuarial Science?",
+          "Should I choose Commerce with or without Maths?",
+          "How should I plan my study schedule?"
+        ];
+      } else if (tag === "arts") {
+        chips = [
+          "What are the career options in Psychology or Law?",
+          "How do I prepare for Civil Services (UPSC)?",
+          "How should I plan my study schedule?"
+        ];
+      }
+    }
+  }
+
+  const suggestionsEl = document.getElementById("chatSuggestions");
+  if (suggestionsEl) {
+    suggestionsEl.innerHTML = chips
+      .map(c => `<button class="chat-chip">${escapeHtml(c)}</button>`)
+      .join("");
+
+    suggestionsEl.querySelectorAll(".chat-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const text = btn.textContent;
+        const input = document.getElementById("chatInput");
+        if (input) {
+          input.value = text;
+          handleSendMessage();
+        }
+      });
+    });
+  }
+});
