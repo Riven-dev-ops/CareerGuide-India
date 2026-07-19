@@ -410,30 +410,42 @@ Ensure that:
 - Preferences: ${JSON.stringify(payload.preferences)}
 - Detailed Quest Choices: ${JSON.stringify(payload.selections)}`;
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.5
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  // 30-second timeout so we never hang the spinner indefinitely
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.5
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const json = await response.json();
+    const content = json.choices[0].message.content;
+    return JSON.parse(content);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
   }
-  
-  const json = await response.json();
-  const content = json.choices[0].message.content;
-  return JSON.parse(content);
 }
 
 /**
@@ -912,31 +924,59 @@ async function finishGame() {
     selections: state.selections
   };
 
-  const apiKey = getGroqApiKey();
-  const useAi = USE_GROQ_AI && !!apiKey;
+  // STEP 1: Always run the local hardcoded engine first — instant, works offline.
+  // This guarantees the user always gets a result even if AI fails or times out.
+  const localResult = CareerGuidanceEngine.getRecommendations(payload);
 
-  if (useAi) {
-    try {
-      const resultData = await fetchGroqRecommendations(apiKey, GROQ_MODEL, payload);
-      sessionStorage.setItem("careerGuideResults", JSON.stringify(resultData));
-      setTimeout(() => (window.location.href = "results.html"), 900);
-      return;
-    } catch (err) {
-      console.warn("AI recommendation generation failed, falling back to local engine:", err);
-      // Fallback below
-    }
-  }
-
-  // Fallback / Classic offline: call the local JS engine directly, no server needed.
-  try {
-    const resultData = CareerGuidanceEngine.getRecommendations(payload);
-    sessionStorage.setItem("careerGuideResults", JSON.stringify(resultData));
+  if (!isOnline()) {
+    // Offline: use local engine result only
+    sessionStorage.setItem("careerGuideResults", JSON.stringify(localResult));
     setTimeout(() => (window.location.href = "results.html"), 900);
-  } catch (err) {
-    stage.innerHTML = `
-      <div class="quest-card">
-        <p>Something went wrong generating your report: ${err.message}</p>
-        <button class="btn-primary" onclick="location.reload()">Try again</button>
-      </div>`;
+    return;
   }
+
+  // STEP 2: Online — try to enhance local result with AI analysis.
+  // The local engine result is already saved as a fallback. AI enriches the "why"
+  // bullets and next_steps with personalized language referencing actual quest choices.
+  const apiKey = getGroqApiKey();
+  if (!apiKey) {
+    // No key available — just use local result
+    sessionStorage.setItem("careerGuideResults", JSON.stringify(localResult));
+    setTimeout(() => (window.location.href = "results.html"), 900);
+    return;
+  }
+
+  try {
+    // Merge AI's personalized "why" and "next_steps" into the local engine's
+    // structurally-correct recommendation, so we get the best of both.
+    const aiResult = await fetchGroqRecommendations(apiKey, GROQ_MODEL, payload);
+
+    // Build a hybrid: use local engine's stream ranking (deterministic),
+    // but use AI's richer personalized text for why/next_steps/general_advice.
+    const hybridResult = JSON.parse(JSON.stringify(localResult)); // deep clone
+
+    if (aiResult && aiResult.primary_recommendation) {
+      const aiPrimary = aiResult.primary_recommendation;
+      // Enrich the local primary recommendation with AI text
+      if (aiPrimary.why && aiPrimary.why.length) {
+        hybridResult.primary_recommendation.why = aiPrimary.why;
+      }
+      if (aiPrimary.next_steps && aiPrimary.next_steps.length) {
+        hybridResult.primary_recommendation.next_steps = aiPrimary.next_steps;
+      }
+    }
+
+    if (aiResult && aiResult.general_advice && aiResult.general_advice.length) {
+      hybridResult.general_advice = aiResult.general_advice;
+    }
+
+    hybridResult.ai_enhanced = true;
+    sessionStorage.setItem("careerGuideResults", JSON.stringify(hybridResult));
+  } catch (err) {
+    console.warn("AI enhancement failed, using local engine result:", err);
+    // Fallback: the local engine result works fine on its own
+    sessionStorage.setItem("careerGuideResults", JSON.stringify(localResult));
+  }
+
+  setTimeout(() => (window.location.href = "results.html"), 900);
 }
