@@ -112,6 +112,11 @@ const getGroqApiKey = () => {
     const key = window.AndroidBridge.getGroqApiKey();
     if (key) return key;
   }
+  // Read from sessionStorage cache — game.js stores it there when the assessment runs
+  try {
+    const cached = sessionStorage.getItem("_cgApiKey");
+    if (cached) return cached;
+  } catch(e) {}
   // Key is injected at build time via BuildConfig (AndroidBridge)
   return "";
 };
@@ -177,21 +182,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const apiKey = getGroqApiKey();
       if (!apiKey) {
-        throw new Error("Chatbot API key not configured. Offline mode.");
+        throw new Error("NO_KEY");
       }
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: chatHistory,
-          temperature: 0.7
-        })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      let response;
+      try {
+        response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages: chatHistory,
+            temperature: 0.7
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        throw fetchErr;
+      }
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status}`);
@@ -214,9 +230,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     } catch (err) {
       console.error("Chat error:", err);
-      // Ensure we still show the delay on error if needed, or clear immediately
       loadingBubble.remove();
-      appendChatBubble("Sorry, I encountered an issue connecting. Please try again in a moment.", "incoming");
+      if (err.message === "NO_KEY" || !navigator.onLine) {
+        appendChatBubble("The AI counsellor needs an internet connection to respond. Please check your connection and try again.", "incoming");
+      } else if (err.name === "AbortError") {
+        appendChatBubble("Response timed out. The AI took too long — please try again.", "incoming");
+      } else {
+        appendChatBubble("Sorry, I encountered an issue connecting. Please try again in a moment.", "incoming");
+      }
     }
   }
 

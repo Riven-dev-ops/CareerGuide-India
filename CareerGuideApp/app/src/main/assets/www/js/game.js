@@ -147,8 +147,17 @@ const state = {
 const getGroqApiKey = () => {
   if (window.AndroidBridge && typeof window.AndroidBridge.getGroqApiKey === "function") {
     const key = window.AndroidBridge.getGroqApiKey();
-    if (key) return key;
+    if (key) {
+      // Cache in sessionStorage so main.js (results page) can use it too
+      try { sessionStorage.setItem("_cgApiKey", key); } catch(e) {}
+      return key;
+    }
   }
+  // Try sessionStorage cache (set on first call via AndroidBridge)
+  try {
+    const cached = sessionStorage.getItem("_cgApiKey");
+    if (cached) return cached;
+  } catch(e) {}
   // Key is injected at build time via BuildConfig (AndroidBridge)
   return "";
 };
