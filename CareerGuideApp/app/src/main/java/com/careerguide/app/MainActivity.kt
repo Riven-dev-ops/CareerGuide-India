@@ -179,13 +179,13 @@ class MainActivity : AppCompatActivity() {
             null,
             printAttributes,
             null,
-            object : PrintDocumentAdapter.LayoutResultCallback() {
+            object : android.print.PrintHelper.LayoutCallbackWrapper() {
                 override fun onLayoutFinished(info: PrintDocumentInfo?, changed: Boolean) {
                     printAdapter.onWrite(
                         arrayOf(PageRange.ALL_PAGES),
                         pfd,
                         CancellationSignal(),
-                        object : PrintDocumentAdapter.WriteResultCallback() {
+                        object : android.print.PrintHelper.WriteCallbackWrapper() {
                             override fun onWriteFinished(pages: Array<out PageRange>?) {
                                 super.onWriteFinished(pages)
                                 try {

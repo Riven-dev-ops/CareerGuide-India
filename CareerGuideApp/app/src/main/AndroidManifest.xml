@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!--
-        No INTERNET permission — the app is fully offline by design.
-        (Google Fonts import in style.css will simply be skipped by the
-        WebView with no network; the fallback system fonts still look fine.)
-    -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
