@@ -22,3 +22,6 @@ Thumbs.db
 # Vercel (not needed for this Android app)
 api/
 vercel.json
+
+# Local API key config — key is injected by CI from GitHub Secret
+app/src/main/assets/www/js/config.js
