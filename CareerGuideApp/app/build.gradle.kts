@@ -3,6 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+val groqApiKey = localProperties.getProperty("groq.api.key") ?: ""
+
 android {
     namespace = "com.careerguide.app"
     compileSdk = 34
@@ -13,6 +20,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "GROQ_API_KEY", "\"$groqApiKey\"")
     }
 
     buildTypes {
@@ -32,6 +41,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         viewBinding = false
     }
 }

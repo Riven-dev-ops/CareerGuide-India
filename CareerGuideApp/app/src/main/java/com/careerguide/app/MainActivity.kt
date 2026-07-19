@@ -96,6 +96,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        @JavascriptInterface
+        fun getGroqApiKey(): String {
+            return BuildConfig.GROQ_API_KEY
+        }
     }
 
     /**

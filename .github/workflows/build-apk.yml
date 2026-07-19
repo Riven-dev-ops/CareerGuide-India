@@ -32,8 +32,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Inject Groq API Key
+        run: echo "groq.api.key=${{ secrets.GROQ_API_KEY }}" >> local.properties
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK as a downloadable artifact
         uses: actions/upload-artifact@v4

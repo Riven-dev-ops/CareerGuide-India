@@ -107,7 +107,12 @@ function escapeHtml(str) {
    AI Career Counsellor Chatbot Integration
    ========================================================= */
 
-const GROQ_API_KEY = "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";
+const getGroqApiKey = () => {
+  if (window.AndroidBridge && typeof window.AndroidBridge.getGroqApiKey === "function") {
+    return window.AndroidBridge.getGroqApiKey();
+  }
+  return "";
+};
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 let chatHistory = [];
@@ -168,10 +173,15 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       chatHistory.push({ role: "user", content: text });
 
+      const apiKey = getGroqApiKey();
+      if (!apiKey) {
+        throw new Error("Chatbot API key not configured. Offline mode.");
+      }
+
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

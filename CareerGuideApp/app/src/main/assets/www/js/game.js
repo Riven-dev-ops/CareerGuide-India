@@ -144,7 +144,12 @@ const state = {
 });
 
 // Groq AI Integration Constants
-const GROQ_API_KEY = "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";
+const getGroqApiKey = () => {
+  if (window.AndroidBridge && typeof window.AndroidBridge.getGroqApiKey === "function") {
+    return window.AndroidBridge.getGroqApiKey();
+  }
+  return "";
+};
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const USE_GROQ_AI = true; // Set to false to disable AI quest completely
 
@@ -428,8 +433,9 @@ Ensure that:
 }
 
 async function startAiQuest() {
-  if (!GROQ_API_KEY || GROQ_API_KEY === "gsk_YOUR_ACTUAL_API_KEY_HERE") {
-    alert("Please set your Groq API Key in js/game.js!");
+  const apiKey = getGroqApiKey();
+  if (!apiKey) {
+    alert("Groq API Key not configured in Android app!");
     return;
   }
 
@@ -444,7 +450,7 @@ async function startAiQuest() {
     </div>`;
 
   try {
-    const data = await fetchGroqQuestions(GROQ_API_KEY, GROQ_MODEL);
+    const data = await fetchGroqQuestions(apiKey, GROQ_MODEL);
 
     if (data && data.scenarios && data.scenarios.length === 8) {
       SCENARIOS.length = 0;
@@ -646,7 +652,8 @@ function renderLevel1() {
   updatePower();
 
   document.getElementById("toLevel2").addEventListener("click", () => {
-    if (USE_GROQ_AI && GROQ_API_KEY && GROQ_API_KEY !== "gsk_YOUR_ACTUAL_API_KEY_HERE" && GROQ_API_KEY !== "") {
+    const apiKey = getGroqApiKey();
+    if (USE_GROQ_AI && apiKey) {
       startAiQuest();
     } else {
       addXp(10);
@@ -691,7 +698,8 @@ function updatePower() {
 function renderLevel2() {
   setHudLevel(2);
   if (state.scenarioIndex >= SCENARIOS.length) {
-    const useAi = USE_GROQ_AI && GROQ_API_KEY && GROQ_API_KEY !== "gsk_YOUR_ACTUAL_API_KEY_HERE" && GROQ_API_KEY !== "";
+    const apiKey = getGroqApiKey();
+    const useAi = USE_GROQ_AI && !!apiKey;
     if (useAi) {
       stage.innerHTML = `
         <div class="quest-card" style="text-align: center; padding: 3.5rem 2rem;">
@@ -707,7 +715,7 @@ function renderLevel2() {
         .filter(s => s.type === "scenario")
         .map(s => s.tag);
 
-      fetchGroqSwipeCards(GROQ_API_KEY, GROQ_MODEL, selectedTags, state.scores)
+      fetchGroqSwipeCards(apiKey, GROQ_MODEL, selectedTags, state.scores)
         .then((cards) => {
           if (cards && cards.length === 12) {
             SWIPE_CARDS.length = 0;
@@ -906,11 +914,12 @@ async function finishGame() {
     selections: state.selections
   };
 
-  const useAi = USE_GROQ_AI && !!GROQ_PROXY_URL;
+  const apiKey = getGroqApiKey();
+  const useAi = USE_GROQ_AI && !!apiKey;
 
   if (useAi) {
     try {
-      const resultData = await fetchGroqRecommendations(GROQ_API_KEY, GROQ_MODEL, payload);
+      const resultData = await fetchGroqRecommendations(apiKey, GROQ_MODEL, payload);
       sessionStorage.setItem("careerGuideResults", JSON.stringify(resultData));
       setTimeout(() => (window.location.href = "results.html"), 900);
       return;
