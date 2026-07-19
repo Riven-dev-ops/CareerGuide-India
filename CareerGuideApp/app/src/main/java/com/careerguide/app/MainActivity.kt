@@ -64,6 +64,8 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true          // required for sessionStorage (results handoff)
             allowFileAccess = true
             allowContentAccess = true
+            allowUniversalAccessFromFileURLs = true
+            allowFileAccessFromFileURLs = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
 
