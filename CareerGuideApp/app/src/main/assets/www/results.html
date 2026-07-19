@@ -96,6 +96,14 @@
 
   <script>
     document.getElementById("printBtn").addEventListener("click", async function () {
+      // If running inside Android WebView, use the native PDF bridge — it saves
+      // directly to the device's Downloads folder, which is exactly what users expect.
+      if (window.AndroidBridge && typeof window.AndroidBridge.printPage === "function") {
+        window.AndroidBridge.printPage();
+        return;
+      }
+
+      // On a regular browser (Chrome/laptop), use html2canvas + jsPDF.
       const btn = this;
       const originalLabel = btn.innerHTML;
       const element = document.getElementById("resultsRoot");
@@ -180,12 +188,7 @@
       } catch (err) {
         console.error("PDF generation failed:", err);
         restore();
-        // Fallback so the user still gets something if html2canvas/jsPDF ever fail to load
-        if (window.AndroidBridge && typeof window.AndroidBridge.printPage === "function") {
-          window.AndroidBridge.printPage();
-        } else {
-          window.print();
-        }
+        window.print();
       }
     });
   </script>

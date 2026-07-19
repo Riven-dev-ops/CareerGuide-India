@@ -109,8 +109,10 @@ function escapeHtml(str) {
 
 const getGroqApiKey = () => {
   if (window.AndroidBridge && typeof window.AndroidBridge.getGroqApiKey === "function") {
-    return window.AndroidBridge.getGroqApiKey();
+    const key = window.AndroidBridge.getGroqApiKey();
+    if (key) return key;
   }
+  // Key is injected at build time via BuildConfig (AndroidBridge)
   return "";
 };
 const GROQ_MODEL = "llama-3.3-70b-versatile";

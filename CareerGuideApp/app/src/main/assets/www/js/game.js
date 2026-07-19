@@ -146,12 +146,16 @@ const state = {
 // Groq AI Integration Constants
 const getGroqApiKey = () => {
   if (window.AndroidBridge && typeof window.AndroidBridge.getGroqApiKey === "function") {
-    return window.AndroidBridge.getGroqApiKey();
+    const key = window.AndroidBridge.getGroqApiKey();
+    if (key) return key;
   }
+  // Key is injected at build time via BuildConfig (AndroidBridge)
   return "";
 };
 const GROQ_MODEL = "llama-3.3-70b-versatile";
-const USE_GROQ_AI = true; // Set to false to disable AI quest completely
+
+// Returns true when the device has internet connectivity
+const isOnline = () => navigator.onLine !== false;
 
 // Backup classic questions for fallback
 const CLASSIC_SCENARIOS = JSON.parse(JSON.stringify(SCENARIOS));
@@ -432,12 +436,24 @@ Ensure that:
   return JSON.parse(content);
 }
 
-async function startAiQuest() {
-  const apiKey = getGroqApiKey();
-  if (!apiKey) {
-    alert("Groq API Key not configured in Android app!");
+/**
+ * Entry point for Level 2 — checks connectivity first, then routes to
+ * AI-generated questions (online) or hardcoded classic questions (offline).
+ */
+function checkConnectivityAndStart() {
+  if (!isOnline()) {
+    // Device is offline — silently fall back to classic questions
+    restoreClassicQuestions();
+    addXp(10);
+    showLevelBanner("Level 2 Unlocked!", "The Story Quest begins");
+    setTimeout(renderLevel2, 250);
     return;
   }
+  startAiQuest();
+}
+
+async function startAiQuest() {
+  const apiKey = getGroqApiKey();
 
   stage.innerHTML = `
     <div class="quest-card" style="text-align: center; padding: 3.5rem 2rem;">
@@ -479,22 +495,13 @@ async function startAiQuest() {
       throw new Error("Received invalid quest structure (expected 8 scenarios).");
     }
   } catch (err) {
-    console.error(err);
-    document.getElementById("loadingTitle").textContent = "Assessment generation paused";
-    document.getElementById("loadingSub").textContent = "Error: " + err.message;
-    document.getElementById("loadingStatus").innerHTML = `
-      <div style="margin-top: 1rem;">
-        <button class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem; margin-right: 0.5rem;" id="retryAiBtn">Try Again</button>
-        <button class="btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem; border-color: var(--navy); color: var(--navy);" id="fallbackClassicBtn">Use Classic Offline Mode</button>
-      </div>`;
-
-    document.getElementById("retryAiBtn").addEventListener("click", startAiQuest);
-    document.getElementById("fallbackClassicBtn").addEventListener("click", () => {
-      restoreClassicQuestions();
-      addXp(10);
-      showLevelBanner("Level 2 Unlocked!", "The Story Quest begins");
-      setTimeout(renderLevel2, 250);
-    });
+    console.error("AI quest failed, falling back to classic questions:", err);
+    // Auto-fallback: seamlessly continue with hardcoded questions instead of
+    // showing an error screen. The user gets a smooth experience regardless.
+    restoreClassicQuestions();
+    addXp(10);
+    showLevelBanner("Level 2 Unlocked!", "The Story Quest begins");
+    setTimeout(renderLevel2, 250);
   }
 }
 
@@ -652,14 +659,7 @@ function renderLevel1() {
   updatePower();
 
   document.getElementById("toLevel2").addEventListener("click", () => {
-    const apiKey = getGroqApiKey();
-    if (USE_GROQ_AI && apiKey) {
-      startAiQuest();
-    } else {
-      addXp(10);
-      showLevelBanner("Level 2 Unlocked!", "The Story Quest begins");
-      setTimeout(renderLevel2, 250);
-    }
+    checkConnectivityAndStart();
   });
 }
 
@@ -698,9 +698,7 @@ function updatePower() {
 function renderLevel2() {
   setHudLevel(2);
   if (state.scenarioIndex >= SCENARIOS.length) {
-    const apiKey = getGroqApiKey();
-    const useAi = USE_GROQ_AI && !!apiKey;
-    if (useAi) {
+    if (isOnline()) {
       stage.innerHTML = `
         <div class="quest-card" style="text-align: center; padding: 3.5rem 2rem;">
           <div class="spinner-container" style="margin-bottom: 1.5rem;">
@@ -715,7 +713,7 @@ function renderLevel2() {
         .filter(s => s.type === "scenario")
         .map(s => s.tag);
 
-      fetchGroqSwipeCards(apiKey, GROQ_MODEL, selectedTags, state.scores)
+      fetchGroqSwipeCards(getGroqApiKey(), GROQ_MODEL, selectedTags, state.scores)
         .then((cards) => {
           if (cards && cards.length === 12) {
             SWIPE_CARDS.length = 0;

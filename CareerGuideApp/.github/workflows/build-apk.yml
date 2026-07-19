@@ -35,6 +35,12 @@ jobs:
             chmod +x gradlew
           fi
 
+      - name: Inject Groq API key into local.properties
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          echo "groq.api.key=${GROQ_API_KEY}" >> local.properties
+
       - name: Build debug APK
         run: |
           if [ -f gradlew ]; then
